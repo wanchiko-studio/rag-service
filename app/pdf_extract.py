@@ -13,9 +13,11 @@ all, and that case is detected and reported rather than passed on as an empty st
 from __future__ import annotations
 
 import io
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import pdfplumber
+
+from app.normalize import NormalizationReport, normalize_text
 
 
 class PdfExtractionError(Exception):
@@ -38,6 +40,7 @@ class PageText:
 class ExtractedDocument:
     filename: str
     pages: list[PageText]
+    normalization: NormalizationReport = field(default_factory=NormalizationReport)
 
     @property
     def page_count(self) -> int:
@@ -86,7 +89,17 @@ def extract_pages(data: bytes, *, filename: str = "upload.pdf") -> ExtractedDocu
     except Exception as exc:  # pdfplumber raises a wide variety of errors
         raise PdfExtractionError(f"Не удалось прочитать PDF: {exc}") from exc
 
-    doc = ExtractedDocument(filename=filename, pages=pages)
+    # Repair font-encoding damage before anything downstream sees the text, because
+    # embeddings built on corrupted words would all have to be rebuilt afterwards.
+    report = NormalizationReport()
+    for page in pages:
+        page.text, page_report = normalize_text(page.text)
+        report.unconditional += page_report.unconditional
+        report.contextual += page_report.contextual
+        for char, count in page_report.remaining.items():
+            report.remaining[char] = report.remaining.get(char, 0) + count
+
+    doc = ExtractedDocument(filename=filename, pages=pages, normalization=report)
 
     if doc.page_count and doc.characters < MIN_CHARS_PER_PAGE * doc.page_count:
         raise PdfExtractionError(

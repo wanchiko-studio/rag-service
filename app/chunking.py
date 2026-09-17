@@ -86,9 +86,40 @@ def split_spans(text: str, max_chars: int) -> list[tuple[int, int]]:
 
         if end >= len(text):
             break
-        start = max(end - overlap, start + 1)
+
+        # The end of a chunk lands on a boundary, but the start of the next one is
+        # just `end - overlap`, which lands wherever it lands — mid-word, in practice.
+        # A retrieved passage that opens «he claim they care about» reads as broken,
+        # and embedding a fragment that starts mid-sentence is noisier than it needs
+        # to be. So walk forward to the nearest real boundary.
+        start = _align_start(text, max(end - overlap, start + 1), max(120, overlap // 2))
 
     return spans
+
+
+def _align_start(text: str, pos: int, limit: int) -> int:
+    """Nudge `pos` forward to the next sensible boundary, at most `limit` chars.
+
+    Prefers a paragraph break, then a line break, then a sentence end, and failing
+    all three simply steps past the partial word so a chunk never opens mid-word.
+    Only ever moves forward, so the caller's loop always makes progress.
+    """
+    if pos <= 0 or pos >= len(text):
+        return pos
+    if text[pos - 1].isspace():
+        return pos  # already at a boundary
+
+    window = text[pos : pos + limit]
+    for separator in ("\n\n", "\n", ". "):
+        offset = window.find(separator)
+        if offset != -1:
+            return pos + offset + len(separator)
+
+    offset = window.find(" ")
+    if offset != -1:
+        return pos + offset + 1
+
+    return pos
 
 
 def chunk_document(

@@ -37,6 +37,7 @@ def main() -> int:
     print(f"Файл:     {doc.filename}")
     print(f"Страниц:  {doc.page_count}")
     print(f"Символов: {doc.characters:,}".replace(",", " "))
+    print(f"Кодировка: {doc.normalization.summary()}")
     if empty:
         print(f"Пустые страницы (нет текста): {empty}")
 
