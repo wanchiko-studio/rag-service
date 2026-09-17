@@ -53,10 +53,51 @@ Built in the open, one step per day. Honest state as of the last commit:
 - [x] PDF text extraction with page numbers preserved
 - [x] Font-encoding repair, measured rather than assumed — see below
 - [x] Paragraph chunking carrying `source_file` and `page`, boundary-aligned at both ends
-- [ ] Embeddings into Qdrant, local, in Docker
+- [x] Local embeddings and vector search in Qdrant, with a measured baseline — see below
+- [ ] Qdrant in a container instead of embedded mode
 - [ ] `POST /ask` returning an answer plus the chunks used
 - [ ] CI running green with no API key and no network access
 - [ ] `rag-eval`: 20 questions, known answers, a printed retrieval score
+
+## The first baseline is weak, and that is recorded on purpose
+
+Retrieval runs. It is not yet good, and the numbers are here rather than hidden.
+
+Asked a Russian question against a five-page bilingual
+document split into ten chunks, the passage that answers it
+came back **second**. The three scores were **0.4549 / 0.4443 / 0.4434**: a spread of
+about one hundredth across the entire top three. A retriever that cannot separate a
+right answer from a wrong one by more than that is not ranking, it is guessing politely.
+
+What beat it was not nonsense, which is its own kind of problem. First place went to the
+closing recap four pages later, which repeats the advice without ever saying
+what to say. Third went to a related passage — right subject, wrong moment.
+The model is matching the topic and is blind to the difference between a
+summary and the passage that actually answers it.
+
+Worth stating plainly: with ten chunks indexed, "in the top three" means "in the top
+thirty percent". That is a low bar, and `rag-eval` needs a harder one — the rank of the
+correct chunk, not merely whether it showed up.
+
+Measured on Python 3.12.14, `fastembed==0.8.0`, `onnxruntime==1.23.2`, `max_chars=1200`,
+macOS x86_64. Every chunk fits the model window whole — 387 tokens at the largest against
+a limit of 512 — so none of this is a truncation artefact.
+
+Three identified causes, in the order they are worth attacking:
+
+1. **The model is tuned for sentence similarity, not retrieval.** `intfloat/multilingual-e5-large`
+   is built for this task; MiniLM was chosen for CPU speed on an Intel machine.
+2. **Cross-lingual retrieval is the hard case** — a Russian question against largely
+   English passages — and this model is mediocre at it.
+3. **1200-character chunks dilute the signal.** One relevant sentence surrounded by
+   1100 characters of unrelated text drags the vector off-topic.
+
+`fastembed` 0.8.0 uses mean pooling for this model where older versions used the CLS
+embedding, and announces it at load time. That is a fourth lever to test, not an
+explanation of the above.
+
+None of these are guesses to act on blindly. `rag-eval` exists to change one variable
+at a time and show whether the number moved, which is the entire point of the project.
 
 ## The source text is damaged, and that had to be fixed first
 
@@ -80,16 +121,28 @@ a new kind of damage shows up instead of quietly poisoning the index.
 
 ## Quick start
 
-Not yet runnable — see Status. The intended shape:
+Indexing and search run today. The HTTP service does not exist yet — see Status.
+
+🔑 **Python 3.10–3.13.** Not 3.14: `fastembed` needs `onnxruntime`, and no onnxruntime
+release publishes a cp314 wheel. On Intel macOS the ceiling is lower still — onnxruntime
+stopped shipping x86_64 macOS wheels after **1.23.2**, which is therefore what pip
+resolves to here. Nothing is pinned, because the constraint belongs to the machine rather
+than to the project; this note is the record.
 
 ```bash
 git clone <repo-url> && cd rag-service
-python -m venv .venv && source .venv/bin/activate
+python3.12 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 
-cp .env.example .env        # fill in your own provider key
-docker compose up -d        # Qdrant, locally
+python scripts/index_pdf.py path/to/document.pdf --reset
+python scripts/ask.py "ваш вопрос"
 ```
+
+The first index downloads the embedding model (~0.22 GB) and caches it on disk. No API
+key is required — embedding and search both run locally, which is also what will let CI
+go green with no key and no network.
+
+`cp .env.example .env` matters only once the answering step lands; retrieval needs no key.
 
 ## Deliberate limits
 

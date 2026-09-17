@@ -1,2 +1,9 @@
 # Added as each step lands, so this file never lists something the code does not use.
 pdfplumber==0.11.4
+
+# Embeddings, run locally through ONNX. No PyTorch, no API key, no network at query
+# time — which is what makes "CI green with no key and no network" achievable.
+fastembed==0.8.0
+
+# Vector store. Used in embedded mode (a local folder), so no server is required.
+qdrant-client==1.19.1
