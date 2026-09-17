@@ -1,0 +1,26 @@
+# --- secrets: never commit these ---
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# --- python ---
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# --- local data: source PDFs and the vector store stay off the repo ---
+data/
+samples/*.pdf
+qdrant_storage/
+
+# --- os / editor ---
+.DS_Store
+.idea/
+.vscode/

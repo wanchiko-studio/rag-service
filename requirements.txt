@@ -1,0 +1,2 @@
+# Added as each step lands, so this file never lists something the code does not use.
+pdfplumber==0.11.4
