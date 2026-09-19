@@ -1,0 +1,13 @@
+# Test-only dependencies. Kept out of requirements.txt so that installing the service
+# does not drag a test runner along with it, and so `pip install -r requirements.txt`
+# stays an honest list of what the code imports at runtime.
+#
+#   pip install -r requirements.txt -r requirements-dev.txt
+#   pytest
+
+pytest==9.1.1
+
+# httpx is what fastapi.testclient.TestClient runs on. It arrives transitively via
+# qdrant-client today, but relying on another package's dependency to keep the tests
+# working is the kind of thing that breaks on an unrelated upgrade.
+httpx==0.28.1
