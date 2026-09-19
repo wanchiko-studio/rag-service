@@ -1,7 +1,12 @@
 # rag-service
 
-Answers questions about messy Russian tender documents by retrieving the relevant clauses instead of feeding a model three hundred pages.
-Every answer cites the file and page it came from, and retrieval accuracy is measured rather than claimed.
+Finds the clauses in a messy Russian tender document that answer a question, instead of feeding a model three hundred pages.
+Every passage comes back with the file and page it came from, and retrieval accuracy is measured rather than claimed.
+
+**Retrieval only, on purpose.** Nothing here writes an answer yet — `POST /ask` returns the
+ranked passages and their scores. Generation needs a model, a model needs a key or a local
+runtime, and neither exists in this repo today. An endpoint that cannot fabricate an answer
+is a smaller promise than one that might.
 
 ---
 
@@ -12,11 +17,12 @@ model, and a model asked "what is the penalty for late delivery?" will either re
 an answer. Keyword search does not help either: the document says «пеня», the question says
 «штраф», and `Ctrl+F` finds nothing.
 
-So the service does the obvious thing instead. It cuts the document into labelled pieces,
-finds the two or three that actually answer the question, and hands only those to the model.
+So the service does the obvious thing instead. It cuts the document into labelled pieces
+and finds the two or three that actually answer the question — the short list a model
+would eventually be handed, and for now the short list a person reads directly.
 
-The same engine works on any set of PDFs — point it at a folder of research papers and it
-answers with citations in exactly the same way.
+The same engine works on any PDF with a text layer — point it at a research paper and it
+returns cited passages in exactly the same way.
 
 ## How it works
 
@@ -25,22 +31,27 @@ answers with citations in exactly the same way.
 | **Extract** | `pdfplumber` pulls the text layer, page by page. Scanned files have no text layer, and that case is detected and reported rather than passed on as an empty string. |
 | **Chunk** | Split on paragraph boundaries with an overlap, so a price never lands in a different piece from its currency. Each piece keeps `source_file` and `page`. |
 | **Embed** | Each piece becomes a vector, so «пеня» and «штраф» land near each other. |
-| **Store** | Vectors go into Qdrant, running locally in Docker. |
-| **Ask** | The question is embedded the same way, the nearest pieces are retrieved, and the model answers from those — returning the answer *and* the chunks it used. |
+| **Store** | Vectors go into Qdrant. By default that is embedded mode — a local folder, no server and no Docker — so a clone runs with nothing but Python. `docker-compose.yml` is there when one process is not enough. |
+| **Ask** | The question is embedded the same way and the nearest pieces come back, ranked, scored and cited. No model is called: see the note at the top. |
 
 ## Why the citations matter
 
-The answer is only trustworthy if you can check it. Every response carries the file name and
-page number of each chunk it used, so a wrong answer is visible in seconds instead of being
-discovered later. The retrieval returns a paragraph, not a sentence — enough to go and verify,
-not enough to quote without reading.
+A result is only trustworthy if you can check it. Every passage carries the file name and
+page number it came from, so a wrong one is visible in seconds instead of being discovered
+later. Retrieval returns a paragraph, not a sentence — enough to go and verify, not enough
+to quote without reading.
 
 ## Why the score matters
 
-If retrieval misses the right paragraph, the model will answer confidently from the wrong one.
-That failure is invisible unless it is measured, so a companion repo (`rag-eval`) runs a fixed
-set of questions with known answers and prints how often the correct chunk reached the top
-three. Changing the chunk size and re-running shows whether the number moved.
+If retrieval misses the right paragraph, anything built on top of it will answer confidently
+from the wrong one. That failure is invisible unless it is measured, so a companion repo
+(`rag-eval`) runs a fixed set of questions with known answers and reports **where the correct
+chunk ranked** — not merely whether it appeared. Changing the chunk size and re-running shows
+whether the number moved.
+
+Rank rather than hit@3 for a concrete reason: with ten chunks indexed, "in the top three"
+means "in the top thirty percent", which would read as 90% success while the system stayed
+useless.
 
 That measurement is the point of this project. Building a retrieval pipeline is a weekend;
 knowing how often it is right is the part that is usually skipped.
@@ -54,9 +65,11 @@ Built in the open, one step per day. Honest state as of the last commit:
 - [x] Font-encoding repair, measured rather than assumed — see below
 - [x] Paragraph chunking carrying `source_file` and `page`, boundary-aligned at both ends
 - [x] Local embeddings and vector search in Qdrant, with a measured baseline — see below
-- [ ] Qdrant in a container instead of embedded mode
-- [ ] `POST /ask` returning an answer plus the chunks used
-- [ ] CI running green with no API key and no network access
+- [x] `POST /ask` returning ranked passages with citations and scores
+- [x] Tests that pass with no API key and no network, enforced by a socket guard
+- [x] CI on GitHub runners, Python 3.11 and 3.12
+- [x] Qdrant in a container — `docker-compose.yml` written, **never run** (see below)
+- [ ] Generation: a model that writes an answer from the retrieved passages
 - [ ] `rag-eval`: 20 questions, known answers, a printed retrieval score
 
 ## The first baseline is weak, and that is recorded on purpose
@@ -121,7 +134,8 @@ a new kind of damage shows up instead of quietly poisoning the index.
 
 ## Quick start
 
-Indexing and search run today. The HTTP service does not exist yet — see Status.
+Verified from a clean clone on 19 September 2026, following only these instructions,
+against a PDF the author had never indexed before.
 
 🔑 **Python 3.11 or 3.12** — those are the versions CI runs, so those are the versions
 claimed. 3.10 and 3.13 should work and have not been tried.
@@ -138,22 +152,78 @@ git clone <repo-url> && cd rag-service
 python3.12 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 
-python scripts/index_pdf.py path/to/document.pdf --reset
+# Point this at any PDF you have. It needs a real text layer — see Deliberate limits.
+python scripts/index_pdf.py path/to/your-document.pdf --reset
 python scripts/ask.py "ваш вопрос"
 ```
 
-The first index downloads the embedding model (~0.22 GB) and caches it on disk. No API
-key is required — embedding and search both run locally, which is also what will let CI
-go green with no key and no network.
+The first index downloads the embedding model (~0.22 GB) and caches it on disk. **No API
+key is required at any point** — embedding and search both run locally.
 
-`cp .env.example .env` matters only once the answering step lands; retrieval needs no key.
+`cp .env.example .env` is optional today. Nothing in the repo reads `.env` yet; it
+documents the variables the service understands.
+
+### The HTTP API
+
+```bash
+uvicorn app.api:app --reload
+
+curl -s localhost:8000/health
+curl -s localhost:8000/ask -H 'content-type: application/json' \
+     -d '{"question": "какая пеня за просрочку поставки?", "top_k": 3}'
+```
+
+Interactive docs at `localhost:8000/docs`. `/health` reports which store it opened and how
+many passages are in it — check that first when `/ask` returns nothing, because an empty
+index and bad retrieval look identical from the outside.
+
+⚠️ **In embedded mode the API and the CLI cannot run at the same time.** The store takes an
+exclusive lock on its folder, so `scripts/ask.py` will fail while `uvicorn` is up, and vice
+versa. Stop one, or run the container.
+
+### Tests
+
+```bash
+pip install -r requirements-dev.txt
+pytest
+```
+
+32 tests, about a second, **no API key and no network**. That is enforced rather than
+promised: `tests/conftest.py` replaces the embedding model with a deterministic fake and
+blocks outbound TCP, so a test that tries to reach the internet fails and says why.
+Loopback stays open, because the test client needs it.
+
+Installing the dependencies obviously needs the network. Running the tests does not.
+
+### Qdrant in a container
+
+```bash
+docker compose up -d
+export QDRANT_URL=http://localhost:6333
+python scripts/index_pdf.py path/to/your-document.pdf --reset
+```
+
+🔴 **This path has never been run.** The machine this was built on has no Docker installed.
+The image tag is matched to the client version on purpose (`qdrant-client==1.19.1` ↔
+`qdrant/qdrant:v1.19.1`) and CI parses the file, but parsing is not starting. Treat it as a
+documented intention until someone runs it.
+
+Note that the two stores are separate: whatever you indexed into the folder is not in the
+container. `/health` tells you which one you are talking to.
 
 ## Deliberate limits
 
+- **No generation.** `POST /ask` returns passages, not prose. See the note at the top.
 - **Scanned PDFs are not supported.** No text layer means nothing to extract; OCR is out of scope.
 - **Citations are chunk-level**, so they point at a passage on a page, not at one sentence.
 - **Russian source material is the target.** The chunking assumes Russian paragraph and
   sentence conventions, which is where the accuracy work has gone.
+- **The largest document ever tested is five pages.** The opening paragraph talks about
+  three-hundred-page tender packages because that is the problem being aimed at, not
+  because that has been demonstrated. Nothing in the design should care — chunking is
+  linear and Qdrant is built for far more — but "should not care" is a prediction, and
+  this file tries to keep predictions and measurements apart.
+- **The container is unverified.** Written, parsed by CI, never started.
 
 ## Licence
 
