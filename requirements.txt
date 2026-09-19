@@ -5,5 +5,11 @@ pdfplumber==0.11.4
 # time — which is what makes "CI green with no key and no network" achievable.
 fastembed==0.8.0
 
-# Vector store. Used in embedded mode (a local folder), so no server is required.
+# Vector store. Embedded mode (a local folder) by default, so no server is required;
+# set QDRANT_URL to point at the container in docker-compose.yml instead.
 qdrant-client==1.19.1
+
+# HTTP layer for POST /ask. FastAPI gives request validation and an OpenAPI page for
+# free, which is most of what a reviewer needs to try the thing without reading code.
+fastapi==0.141.1
+uvicorn==0.53.0
