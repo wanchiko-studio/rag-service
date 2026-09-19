@@ -1,0 +1,51 @@
+# Tests on GitHub runners, with no API key and no network access at test time.
+#
+# WHAT "NO NETWORK" MEANS HERE, PRECISELY: installing dependencies obviously needs the
+# internet. The *tests* do not. Nothing is mocked to hide a missing key, because there
+# is no key — the embedding model runs locally through ONNX and generation does not
+# exist yet. tests/conftest.py blocks outbound TCP so this is enforced rather than
+# trusted, and a runner has a cold model cache, so a forgotten mock fails here loudly.
+#
+# WHY ONLY TWO PYTHON VERSIONS: the value of this badge is that it is green. Every extra
+# interpreter is another chance of a red caused by someone else's packaging rather than
+# by this code. 3.11 and 3.12 give evidence of a range; four versions would mostly give
+# maintenance. The support claim in the README is written to match what is tested here
+# rather than the other way round.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false # one version failing should not hide the other's result
+      matrix:
+        python-version: ["3.11", "3.12"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt -r requirements-dev.txt
+
+      - name: Run tests
+        run: pytest
+
+      - name: Check the compose file parses
+        # Not a substitute for running it — see the README. This only catches a typo in
+        # the YAML, which is still more than the machine it was written on could do.
+        run: docker compose -f docker-compose.yml config --quiet

@@ -16,8 +16,14 @@ topics set.
 
 ## Environment — this cost an evening, do not rediscover it
 
-- **Python 3.10–3.13 only. Not 3.14.** `onnxruntime` publishes no cp314 wheel for any
-  release, so `fastembed` cannot install. This is unsatisfiable, not misconfigured.
+- **Tested on 3.11 and 3.12 — that is what CI runs.** 3.10 and 3.13 are expected to work
+  (every dependency declares support) but nothing has ever run them, so the README does
+  not claim them. Narrowing the claim was preferred to widening the matrix: four
+  interpreters on a repo whose selling point is a green badge is four chances of a red
+  caused by someone else's packaging.
+- **Not 3.14, and this one is a fact rather than a policy.** `onnxruntime` publishes no
+  cp314 wheel for any release, so `fastembed` cannot install. Unsatisfiable, not
+  misconfigured.
 - Built on **3.12.14**. `brew install python@3.12` had to **compile CPython from source
   (~25 min)** — there is no bottle for this macOS release on x86_64. Budget that time if
   the venv is ever rebuilt.

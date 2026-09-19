@@ -123,11 +123,15 @@ a new kind of damage shows up instead of quietly poisoning the index.
 
 Indexing and search run today. The HTTP service does not exist yet — see Status.
 
-🔑 **Python 3.10–3.13.** Not 3.14: `fastembed` needs `onnxruntime`, and no onnxruntime
-release publishes a cp314 wheel. On Intel macOS the ceiling is lower still — onnxruntime
-stopped shipping x86_64 macOS wheels after **1.23.2**, which is therefore what pip
-resolves to here. Nothing is pinned, because the constraint belongs to the machine rather
-than to the project; this note is the record.
+🔑 **Python 3.11 or 3.12** — those are the versions CI runs, so those are the versions
+claimed. 3.10 and 3.13 should work and have not been tried.
+
+**Not 3.14.** `fastembed` needs `onnxruntime`, and no onnxruntime release publishes a
+cp314 wheel, so the install is unsatisfiable rather than merely awkward. On Intel macOS
+the ceiling is lower still — onnxruntime stopped shipping x86_64 macOS wheels after
+**1.23.2**, which is therefore what pip resolves to there. Nothing is pinned against it,
+because the constraint belongs to that machine rather than to the project; this note is
+the record.
 
 ```bash
 git clone <repo-url> && cd rag-service
