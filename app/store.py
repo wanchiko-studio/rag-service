@@ -1,18 +1,23 @@
 """Storing and searching chunk vectors in Qdrant.
 
-Runs Qdrant in **embedded mode** — `QdrantClient(path=...)` keeps everything in a
-local folder with no server and no container. The target machine has no Docker, and
-waiting on a Docker Desktop install would have cost the evening that built this.
+Two modes, one API. `open_store()` picks between them:
 
-The API is identical to the server version, so moving to a container later is a
-one-line change:
+    QDRANT_URL unset    -> embedded, a local folder, no server and no container
+    QDRANT_URL set      -> that container or remote instance
 
-    QdrantClient(path="qdrant_storage")      # embedded, today
-    QdrantClient(url="http://localhost:6333")  # container, later
+**Embedded is the default and stays the default.** It needs no Docker, which means a
+reviewer can clone this repo and get a working system with nothing but Python. The
+container is the upgrade path, not the entry fee.
 
 ⚠️ Embedded mode takes an exclusive lock on its folder, so only one process can use
-it at a time. That is fine for indexing and asking from the command line, and it is
-exactly why the eventual FastAPI service will want the container instead.
+it at a time. Indexing and asking by hand is fine; running the API *and* the CLI is
+not. That is the concrete reason to reach for `docker-compose.yml` — not performance,
+not scale, just the second process.
+
+⚠️ The two modes are separate stores. Indexing into the folder puts nothing in the
+container. Switching `QDRANT_URL` and finding an empty collection is expected, not a
+bug — which is why `GET /health` reports which mode it is in and how many points it
+can see.
 
 🔑 THE STORE PATH IS ANCHORED TO THE REPO, NOT TO THE WORKING DIRECTORY. A relative
 default would mean indexing from the repo root and asking from anywhere else opened
@@ -55,8 +60,33 @@ class SearchHit:
         return f"{self.source_file}, стр. {self.page_start}–{self.page_end}"
 
 
-def open_store(path: str = DEFAULT_PATH) -> QdrantClient:
-    return QdrantClient(path=path)
+def describe_mode(path: str | None = None, url: str | None = None) -> str:
+    """Which store `open_store` would open, as a string fit for a log line or /health.
+
+    Separate from `open_store` so the answer can be reported without taking the
+    embedded mode's exclusive lock.
+    """
+    url = url or os.getenv("QDRANT_URL")
+    if url:
+        return f"container ({url})"
+    return f"embedded ({path or os.getenv('QDRANT_PATH') or DEFAULT_PATH})"
+
+
+def open_store(path: str | None = None, url: str | None = None) -> QdrantClient:
+    """Open the vector store: the container if a URL is configured, else the folder.
+
+    Environment is read here rather than at import time so that a test — or anything
+    that sets the variable after this module loads — actually takes effect. Module-level
+    `os.getenv` freezes the value at the first import, which is the kind of thing that
+    works until it silently does not.
+
+    Called with no arguments, this behaves exactly as it did before the container
+    existed, so the CLI scripts did not have to change.
+    """
+    url = url or os.getenv("QDRANT_URL")
+    if url:
+        return QdrantClient(url=url)
+    return QdrantClient(path=path or os.getenv("QDRANT_PATH") or DEFAULT_PATH)
 
 
 def ensure_collection(

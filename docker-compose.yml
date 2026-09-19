@@ -1,0 +1,42 @@
+# Qdrant as a container, for when one process is not enough.
+#
+# WHY THIS EXISTS: embedded mode (the default) takes an exclusive lock on its storage
+# folder, so the API and the CLI cannot both be open at once. That is fine for indexing
+# and querying by hand; it is not fine for a service. See the docstring in app/store.py.
+#
+# ⚠️ NOT YET VERIFIED. The machine this was written on has no Docker installed, so this
+# file has never been started. The image tag and the client version are matched on
+# purpose (qdrant-client==1.19.1 ↔ qdrant/qdrant:v1.19.1) but "it should work" is not
+# the same as "it ran", and this repo does not pretend otherwise.
+#
+#   docker compose up -d
+#   export QDRANT_URL=http://localhost:6333
+#   python scripts/index_pdf.py path/to/document.pdf --reset
+#
+# Unset QDRANT_URL to go back to embedded mode. Note that the two stores are separate —
+# whatever was indexed into the folder is not in the container, and vice versa.
+
+services:
+  qdrant:
+    image: qdrant/qdrant:v1.19.1
+    container_name: rag-service-qdrant
+    restart: unless-stopped
+    ports:
+      - "6333:6333" # REST — this is the one QDRANT_URL points at
+      - "6334:6334" # gRPC — unused today, exposed so the client can switch without edits
+    volumes:
+      # A named volume rather than a host directory: a host mount would drop a new folder
+      # into the repo and need a .gitignore entry, and the vector store is rebuildable
+      # from the source PDFs anyway.
+      - qdrant_storage:/qdrant/storage
+    healthcheck:
+      # Qdrant's image is distroless — no curl, no wget. Its own binary answers instead,
+      # which is also a better check: it proves the service is up, not just the container.
+      test: ["CMD", "/qdrant/qdrant", "--version"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+volumes:
+  qdrant_storage:
