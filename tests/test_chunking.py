@@ -7,6 +7,8 @@ instance of this project's recurring failure class.
 
 from __future__ import annotations
 
+import random
+
 from app.chunking import chunk_document, split_spans
 from app.normalize import NormalizationReport
 from app.pdf_extract import ExtractedDocument, PageText
@@ -88,3 +90,71 @@ def test_split_spans_rejects_a_nonsense_limit():
     except ValueError:
         return
     raise AssertionError("max_chars=0 should raise ValueError")
+
+
+def test_no_text_is_lost_between_chunks_at_small_max_chars():
+    """Every character of the body lands in at least one chunk, at eight sizes.
+
+    Regression guard. `_align_start` walks forward up to `max(120, overlap // 2)`
+    characters looking for a boundary, while the overlap it starts from is
+    `min(500, max_chars // 4)`. Below max_chars=480 the first number exceeds the
+    second, so the next chunk could begin PAST the end of the previous one.
+
+    What this particular input catches is the mildest form: at max_chars=200 the old
+    code skipped the two-character paragraph break between chunks. Its long run has no
+    sentence boundaries inside it, so it cannot show words going missing — the test
+    below does that.
+    """
+    body = "Раздел 1. Общие положения.\n\n" + ("A" * 900) + "\n\nРаздел 2. Цена контракта."
+    for max_chars in (2000, 1200, 800, 600, 480, 400, 300, 200):
+        covered: set[int] = set()
+        for start, end in split_spans(body, max_chars):
+            covered.update(range(start, end))
+        missing = sorted(set(range(len(body))) - covered)
+        assert not missing, (
+            f"max_chars={max_chars}: {len(missing)} characters in no chunk, "
+            f"first at {missing[0]}: {body[missing[0]:missing[0] + 40]!r}"
+        )
+
+
+def _words_lost(body: str, max_chars: int) -> str:
+    """Every non-whitespace character that ended up in no chunk, in order."""
+    covered: set[int] = set()
+    for start, end in split_spans(body, max_chars):
+        covered.update(range(start, end))
+    return "".join(ch for i, ch in enumerate(body) if i not in covered and not ch.isspace())
+
+
+def test_no_words_are_lost_between_chunks_below_480():
+    """The real form of the gap bug: whole words indexed nowhere.
+
+    Before the clamp, at max_chars=200 this 213-character document came back with a gap
+    between two chunks, and the sentence «Договор оплата заказчик.» was in neither of
+    them. The fixed-seed sweep underneath covers the other sizes below 480.
+
+    Whitespace is excluded on purpose. The clamped code can still leave a paragraph break
+    between two chunks, which costs nothing — but an every-character check would fail
+    correct code for it, and a test that fails correct code is a test that gets deleted.
+    """
+    body = (
+        "Пеня товара. \n\n"
+        "Оплата пеня цена поставка заказчик пеня цена. Договор срок поставка пеня товара. "
+        "Заказчик цена срок пеня поставка. Товара цена поставка оплата товара пеня цена. "
+        "Договор оплата заказчик. \n\n"
+        "Цена срок."
+    )
+    assert not _words_lost(body, 200), f"lost: {_words_lost(body, 200)!r}"
+
+    rng = random.Random(1)  # fixed seed: the same 300 documents on every run
+    vocabulary = ["поставка", "товара", "срок", "пеня", "оплата", "заказчик", "договор", "цена"]
+    for _ in range(300):
+        parts = []
+        for _ in range(rng.randint(3, 25)):
+            words = " ".join(rng.choice(vocabulary) for _ in range(rng.randint(2, 12)))
+            parts.append(words.capitalize() + ". ")
+            if rng.random() < 0.3:
+                parts.append("\n\n")
+        document = "".join(parts).strip()
+        for max_chars in (200, 300, 400, 479):
+            lost = _words_lost(document, max_chars)
+            assert not lost, f"max_chars={max_chars}: lost {lost[:60]!r}"
