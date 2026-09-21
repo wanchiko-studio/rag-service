@@ -1,8 +1,90 @@
-# What I did, Day 3–5
+# What I did
 
 **Read in this order:** this file → `tests/` → the implementation. The tests are the
 best summary of what the code thinks it is for; the implementation is the least
 surprising part once you have those.
+
+---
+
+## Day 5 — reviewing six files an agent sandbox changed
+
+Six files were changed by an agent sandbox on 20 Sept and never read before this review.
+Every claim was checked against the old code, the running model and the real document —
+not against the code comments. Three held up. One rested on a false premise.
+
+### Why each of these lines is here
+
+**The clamp in `split_spans`.** The chunker overlaps each chunk with the last, then nudges
+the start forward to a word boundary so no passage opens mid-word. Below 480 characters
+per chunk, that nudge could jump past the end of the previous chunk, and whatever sat in
+the gap was indexed nowhere — no error. On 16 000 generated documents the old code lost
+real text in 88 % of them; the worst lost 204 characters of words. `min(…, end)` caps the
+nudge so a chunk can never start after the last one finished. It matters now, because
+fitting the model's 128-token window takes chunks of about 440 characters — under the
+threshold. The test is built on a real 213-character failure where the old code dropped
+the sentence «Договор оплата заказчик.», and it fails on the old code.
+
+**The 1200 default, and `MAX_TOKENS = 128`.** The reason originally given was wrong: it
+said 1200 avoids the model's 512-token cutoff. The cutoff is 128 — I gave the model two
+texts identical for their first 146 tokens and different after, and got identical
+vectors. 1200 is still the right default, for a different reason: the indexing script
+already used 1200 while the preview tool used 2000, so the preview showed chunks the index
+never had. Chunk size itself stays at 1200 because it is the first thing rag-eval
+measures. `MAX_TOKENS` went from 512 to 128, so the indexer now warns that every chunk is
+truncated — which is true. It used to print a green tick.
+
+**`current_collection()`.** The store re-read the storage path and URL on every call but
+froze the collection name at import, so setting `QDRANT_COLLECTION` inside a running
+process — a test, or an eval switching collections — did nothing and said nothing. It is
+now read when used, like the others, and `/health` resolves it once, so the name it
+reports is the one it counts and the one `/ask` searches. Honest caveat: `/health` and
+`/ask` already agreed before — both were frozen together — so this fixes a setting being
+ignored, not a mismatch between them.
+
+**The chunk settings removed from `.env.example`.** It listed chunk size, overlap and
+top_k as settings. Nothing ever read them, and nothing loads `.env` at all. Someone
+varying chunk size for the eval would have edited the file, seen an unchanged score, and
+concluded chunk size does not matter. It now names the real controls, which are
+command-line flags. It also corrects the overlap: the file said 500, but the code caps
+overlap at a quarter of the chunk, so at 1200 it is 300.
+
+### Withdrawn: the Day 2 diagnosis
+
+**What it said** (README and CLAUDE.md, 18–21 Sept): retrieval found the right topic but
+could not tell a summary from the passage that actually answered the question — "an
+intent-granularity problem, not a language problem".
+
+**Why it is withdrawn:** the model never read the passage it was said to misjudge.
+
+- The model reads the first 128 tokens of each chunk. The answering passage starts at
+  token 161 of its chunk, and the answer itself at token 249. The model's whole view of
+  that chunk was its first 405 characters — an opening paragraph that does not address
+  the question.
+- The chunk scores exactly 0.4443 at both 1200 and 2000 characters: the same first 128
+  tokens, so the same vector.
+- Two texts that share their first 146 tokens and differ after embed to cosine 1.000000.
+
+**What it does not change:** the scores. 0.4549 / 0.4443 / 0.4434 reproduces exactly,
+through the real CLI and recomputed in memory. Only the explanation was wrong.
+
+**How it was missed:** `index_pdf.py` compared chunks against 512, taken from the model's
+`config.json` — where 512 is the position table, not the length the tokenizer lets
+through — and printed a green tick. The README's "none of this is a truncation artefact"
+was written from that tick. Nobody checked 512 against the running model until the
+sandbox repeated it in a comment and review was asked for.
+
+### Where I was unsure
+
+1. **At 2000 characters the answering chunk ranks first instead of second.** One question,
+   and both sizes truncate, so it is recorded rather than acted on. rag-eval decides.
+2. **Truncation is proven; that fixing it fixes the ranking is not.** The README says "the
+   measured reason", not "the reason", for that reason.
+3. **The sandbox's own test only proves a lost paragraph break.** Kept for its sweep across
+   eight sizes; the new test beside it is the one that proves words go missing.
+
+---
+
+## Day 3–5 — container, API, tests, CI
 
 Seven commits: `CLAUDE.md` · container + configurable store · `POST /ask` · tests · CI ·
 README corrections · this file.
