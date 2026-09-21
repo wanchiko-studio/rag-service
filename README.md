@@ -30,7 +30,7 @@ returns cited passages in exactly the same way.
 |---|---|
 | **Extract** | `pdfplumber` pulls the text layer, page by page. Scanned files have no text layer, and that case is detected and reported rather than passed on as an empty string. |
 | **Chunk** | Split on paragraph boundaries with an overlap, so a price never lands in a different piece from its currency. Each piece keeps `source_file` and `page`. |
-| **Embed** | Each piece becomes a vector, so «пеня» and «штраф» land near each other. |
+| **Embed** | Each piece becomes a vector, so «пеня» and «штраф» land near each other. The model reads only the first 128 tokens of each piece — the baseline section below shows what that costs. |
 | **Store** | Vectors go into Qdrant. By default that is embedded mode — a local folder, no server and no Docker — so a clone runs with nothing but Python. `docker-compose.yml` is there when one process is not enough. |
 | **Ask** | The question is embedded the same way and the nearest pieces come back, ranked, scored and cited. No model is called: see the note at the top. |
 
@@ -72,45 +72,57 @@ Built in the open, one step per day. Honest state as of the last commit:
 - [ ] Generation: a model that writes an answer from the retrieved passages
 - [ ] `rag-eval`: 20 questions, known answers, a printed retrieval score
 
-## The first baseline is weak, and that is recorded on purpose
+## The first baseline is weak, and one reason is now measured
 
 Retrieval runs. It is not yet good, and the numbers are here rather than hidden.
 
-Asked a Russian question against a five-page bilingual
-document split into ten chunks, the passage that answers it
-came back **second**. The three scores were **0.4549 / 0.4443 / 0.4434**: a spread of
-about one hundredth across the entire top three. A retriever that cannot separate a
-right answer from a wrong one by more than that is not ranking, it is guessing politely.
+Asked a Russian question against a private five-page bilingual document split into ten
+chunks, the passage that answers it came back **second**. The three scores were
+**0.4549 / 0.4443 / 0.4434** — a spread of about one hundredth across the whole top
+three. A retriever that cannot separate a right answer from a wrong one by more than
+that is not ranking, it is guessing politely. (The document cannot be published;
+`rag-eval` replaces it with a public tender corpus.)
 
-What beat it was not nonsense, which is its own kind of problem. First place went to the
-closing recap four pages later, which repeats the advice without ever saying
-what to say. Third went to a related passage — right subject, wrong moment.
-The model is matching the topic and is blind to the difference between a
-summary and the passage that actually answers it.
+**The measured reason: the model reads only the first 128 tokens of each chunk.** Not
+the 512 its config file advertises — that is the size of its position table. The
+tokenizer cuts at 128 without a warning. On this text that is about 440 characters, so
+every 1200-character chunk has more than half its text discarded before it is embedded.
+
+Two measurements make that visible rather than inferred:
+
+- **The answering passage starts at token 161 of its chunk.** The model never read it.
+  The chunk ranked second on the strength of an opening paragraph that does not answer
+  the question.
+- **That chunk scores exactly 0.4443 at both 1200 and 2000 characters.** It starts at
+  character 0 either way, so its first 128 tokens are identical — and those are all the
+  model sees.
+
+`scripts/index_pdf.py` now says so, warning that all 10 chunks will be truncated. It used
+to print a green tick, because it compared chunks against 512.
 
 Worth stating plainly: with ten chunks indexed, "in the top three" means "in the top
 thirty percent". That is a low bar, and `rag-eval` needs a harder one — the rank of the
 correct chunk, not merely whether it showed up.
 
-Measured on Python 3.12.14, `fastembed==0.8.0`, `onnxruntime==1.23.2`, `max_chars=1200`,
-macOS x86_64. Every chunk fits the model window whole — 387 tokens at the largest against
-a limit of 512 — so none of this is a truncation artefact.
+Measured on Python 3.12.14, `fastembed==0.8.0` running the quantized ONNX build
+`qdrant/paraphrase-multilingual-MiniLM-L12-v2-onnx-Q`, `onnxruntime==1.23.2`,
+`max_chars=1200`, macOS x86_64.
 
-Three identified causes, in the order they are worth attacking:
+What to change first, in order:
 
-1. **The model is tuned for sentence similarity, not retrieval.** `intfloat/multilingual-e5-large`
-   is built for this task; MiniLM was chosen for CPU speed on an Intel machine.
-2. **Cross-lingual retrieval is the hard case** — a Russian question against largely
-   English passages — and this model is mediocre at it.
-3. **1200-character chunks dilute the signal.** One relevant sentence surrounded by
-   1100 characters of unrelated text drags the vector off-topic.
+1. **Chunk size against the 128-token window** — about 440 characters fits. It is the
+   cause already measured.
+2. **The model.** MiniLM is tuned for sentence similarity, not retrieval, and was chosen
+   for CPU speed on an Intel machine. `intfloat/multilingual-e5-large` is built for
+   retrieval and reads 512 tokens.
+3. **Cross-lingual retrieval** — a Russian question against largely English passages —
+   is the hard case, and this model is mediocre at it.
 
 `fastembed` 0.8.0 uses mean pooling for this model where older versions used the CLS
-embedding, and announces it at load time. That is a fourth lever to test, not an
-explanation of the above.
+embedding, and announces it at load time. A further lever, not an explanation.
 
-None of these are guesses to act on blindly. `rag-eval` exists to change one variable
-at a time and show whether the number moved, which is the entire point of the project.
+None of these get changed by hand. `rag-eval` changes one variable at a time and shows
+whether the number moved, which is the entire point of the project.
 
 ## The source text is damaged, and that had to be fixed first
 
@@ -188,7 +200,7 @@ pip install -r requirements-dev.txt
 pytest
 ```
 
-32 tests, about a second, **no API key and no network**. That is enforced rather than
+35 tests, about a second, **no API key and no network**. That is enforced rather than
 promised: `tests/conftest.py` replaces the embedding model with a deterministic fake and
 blocks outbound TCP, so a test that tries to reach the internet fails and says why.
 Loopback stays open, because the test client needs it.
