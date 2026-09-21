@@ -1,8 +1,9 @@
-"""Chunking: size limits, page-range citations, and not opening mid-word.
+"""Chunking: size limits, page-range citations, not opening mid-word, not losing text.
 
-The size limit is not cosmetic. The embedding model truncates at 512 tokens with no
-error and no warning, so a chunk that is too long loses its tail silently — the third
-instance of this project's recurring failure class.
+The size limit is not cosmetic. The embedding model reads only the first 128 tokens of
+a chunk and discards the rest with no error and no warning, so how documents are cut
+decides what the model can see at all — the same failure class this project keeps
+finding: wrong behaviour that does not complain.
 """
 
 from __future__ import annotations
@@ -32,7 +33,7 @@ def test_short_document_is_a_single_chunk():
 
 
 def test_every_chunk_respects_max_chars():
-    """The limit that keeps text inside the model's 512-token window."""
+    """max_chars is a hard cap — it is the knob rag-eval turns, so it must hold exactly."""
     page = ". ".join(f"Предложение номер {i} про обработку данных" for i in range(200))
     chunks = chunk_document(make_doc([page]), max_chars=600)
 

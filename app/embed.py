@@ -7,19 +7,32 @@ a quarter of a gigabyte of dependency for no benefit.
 
 MODEL CHOICE, and the honest version of it:
 
-    paraphrase-multilingual-MiniLM-L12-v2   384 dims, 0.22 GB, 512-token window
-    paraphrase-multilingual-mpnet-base-v2   768 dims, 1.00 GB, 384-token window
+    paraphrase-multilingual-MiniLM-L12-v2   384 dims, 0.22 GB, reads 128 tokens (measured)
+    paraphrase-multilingual-mpnet-base-v2   768 dims, 1.00 GB
     intfloat/multilingual-e5-large         1024 dims, 2.24 GB, 512-token window
+
+Only the first row is measured here; the other two are published figures.
+
+What actually runs is fastembed's quantized ONNX build of MiniLM,
+`qdrant/paraphrase-multilingual-MiniLM-L12-v2-onnx-Q`, not the sentence-transformers
+checkpoint itself. Worth knowing before comparing scores against another library.
 
 MiniLM is chosen for size and speed on CPU. It is tuned for sentence *similarity*
 rather than *retrieval*, so e5-large would almost certainly score better. That is a
 deliberate starting point, not a claim: `rag-eval` measures retrieval accuracy, so the
 model can be swapped later and the change in the score shown rather than asserted.
 
-🔑 THE 512-TOKEN CEILING IS NOT ADVISORY. Anything longer is silently truncated — no
-error, no warning, the tail simply never reaches the vector. On this corpus Russian
-runs about 3.45 characters per token, so a 2000-character chunk reaches ~630 tokens
-and loses its last fifth. `count_tokens` exists so that stays visible.
+🔑 THE CEILING IS 128 TOKENS, NOT 512, AND IT IS NOT ADVISORY. The model's config says
+512, but that is the size of its position table — feed it 512+ tokens untruncated and it
+crashes rather than truncating. What decides how much text reaches the vector is the
+tokenizer, and it cuts at 128 with no error and no warning. Measured, not read off a
+config: two texts that share their first 146 tokens and differ after that embed to
+cosine 1.000000. Everything past the cut is discarded.
+
+On this corpus Russian runs 3.46 characters per token, so the cut falls near 440
+characters, and a 1200-character chunk loses more than half its text. `count_tokens`
+counts with truncation switched off, agrees token-for-token with fastembed's own
+tokenizer, and exists so that this stays visible instead of silent.
 """
 
 from __future__ import annotations
@@ -28,7 +41,10 @@ from functools import lru_cache
 
 MODEL_NAME = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
 VECTOR_SIZE = 384
-MAX_TOKENS = 512
+# The tokenizer's truncation length as fastembed runs this model — measured, see above.
+# Not the 512 in the model's config.json, which is the position table and cannot be
+# reached through fastembed at all.
+MAX_TOKENS = 128
 
 
 @lru_cache(maxsize=1)

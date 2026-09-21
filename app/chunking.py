@@ -142,9 +142,20 @@ def _align_start(text: str, pos: int, limit: int) -> int:
 def chunk_document(
     doc: ExtractedDocument,
     *,
-    max_chars: int = 2000,
+    max_chars: int = 1200,
 ) -> list[Chunk]:
-    """Turn an extracted document into labelled, citable chunks."""
+    """Turn an extracted document into labelled, citable chunks.
+
+    ⚠️ The default is 1200 because `scripts/index_pdf.py` has always indexed at 1200.
+    This default used to say 2000, so `scripts/show_chunks.py` — the tool for checking
+    how documents get cut — previewed chunks the index never contained. One number now.
+
+    1200 does NOT fit the embedding model. It reads 128 tokens, about 440 characters
+    here, so each 1200-character chunk has more than half its text discarded (see
+    `app.embed.MAX_TOKENS`). That is deliberately not fixed by changing this default:
+    chunk size is the first variable `rag-eval` measures, and moving it before that
+    measurement exists would erase the baseline the measurement is compared against.
+    """
     body, page_ranges = _join_pages(doc)
 
     chunks: list[Chunk] = []

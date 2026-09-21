@@ -1,6 +1,6 @@
 """Eyeball the chunker on a real document.
 
-    python scripts/show_chunks.py <path-to.pdf> [--max-chars 2000] [--show 3]
+    python scripts/show_chunks.py <path-to.pdf> [--max-chars 1200] [--show 3]
 
 Prints what was extracted, how it was cut, and the first few chunks with their
 citations — so you can see whether the paragraph boundaries actually hold on real
@@ -22,7 +22,7 @@ from app.pdf_extract import PdfExtractionError, extract_pages_from_path  # noqa:
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("pdf")
-    parser.add_argument("--max-chars", type=int, default=2000)
+    parser.add_argument("--max-chars", type=int, default=1200)
     parser.add_argument("--show", type=int, default=3, help="how many chunks to print")
     args = parser.parse_args()
 
