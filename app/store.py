@@ -40,7 +40,29 @@ from app.embed import VECTOR_SIZE, embed_query, embed_texts
 _REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 DEFAULT_PATH = os.getenv("QDRANT_PATH") or os.path.join(_REPO_ROOT, "qdrant_storage")
-DEFAULT_COLLECTION = os.getenv("QDRANT_COLLECTION", "tenders")
+FALLBACK_COLLECTION = "tenders"
+
+# Kept for callers that import it, but it is a SNAPSHOT taken at import time. Anything
+# that needs the live value must call `current_collection()` instead — see below.
+DEFAULT_COLLECTION = os.getenv("QDRANT_COLLECTION", FALLBACK_COLLECTION)
+
+
+def current_collection(name: str | None = None) -> str:
+    """The collection to use, resolved when it is asked for rather than at import.
+
+    🔑 THIS EXISTS BECAUSE THE MODULE USED TO CONTRADICT ITS OWN DOCSTRING. `open_store`
+    re-reads QDRANT_PATH and QDRANT_URL at call time, and says in writing why: a
+    module-level `os.getenv` freezes the value at first import. QDRANT_COLLECTION was
+    frozen exactly that way one line above that warning, so setting it after import
+    changed nothing and said nothing. /health and the queries still agreed with each
+    other — both kept using `tenders` — so nothing looked wrong.
+
+    Who that actually bites: anything that sets the variable inside a running process.
+    Tests do; an eval harness that indexes into a separate collection per experiment
+    would. A shell `export` does not — it happens before the process starts, so the
+    import already sees it — and nothing in this repo loads `.env` at all.
+    """
+    return name or os.getenv("QDRANT_COLLECTION") or FALLBACK_COLLECTION
 
 
 @dataclass(slots=True)
@@ -91,7 +113,7 @@ def open_store(path: str | None = None, url: str | None = None) -> QdrantClient:
 
 def ensure_collection(
     client: QdrantClient,
-    name: str = DEFAULT_COLLECTION,
+    name: str | None = None,
     *,
     reset: bool = False,
 ) -> None:
@@ -100,6 +122,7 @@ def ensure_collection(
     Cosine distance, because these vectors are normalised and only direction carries
     meaning — two passages about penalties should match regardless of length.
     """
+    name = current_collection(name)
     exists = client.collection_exists(name)
     if exists and reset:
         client.delete_collection(name)
@@ -116,7 +139,7 @@ def ensure_collection(
 def index_chunks(
     client: QdrantClient,
     chunks: list[Chunk],
-    name: str = DEFAULT_COLLECTION,
+    name: str | None = None,
     *,
     batch_size: int = 32,
 ) -> int:
@@ -124,6 +147,7 @@ def index_chunks(
     if not chunks:
         return 0
 
+    name = current_collection(name)
     stored = 0
     start_id = _next_id(client, name)
 
@@ -155,13 +179,13 @@ def index_chunks(
 def search(
     client: QdrantClient,
     question: str,
-    name: str = DEFAULT_COLLECTION,
+    name: str | None = None,
     *,
     top_k: int = 3,
 ) -> list[SearchHit]:
     """Find the chunks nearest to the question."""
     response = client.query_points(
-        collection_name=name,
+        collection_name=current_collection(name),
         query=embed_query(question),
         limit=top_k,
         with_payload=True,

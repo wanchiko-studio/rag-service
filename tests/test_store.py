@@ -15,6 +15,7 @@ from app.chunking import Chunk
 from app.store import (
     DEFAULT_COLLECTION,
     SearchHit,
+    current_collection,
     describe_mode,
     ensure_collection,
     index_chunks,
@@ -110,3 +111,27 @@ def test_describe_mode_reports_url_over_path(monkeypatch: pytest.MonkeyPatch):
 
     monkeypatch.delenv("QDRANT_URL")
     assert describe_mode().startswith("embedded")
+
+
+def test_collection_name_is_read_when_used_not_at_import(
+    store: QdrantClient, monkeypatch: pytest.MonkeyPatch
+):
+    """A QDRANT_COLLECTION set after import must take effect — and be the one used.
+
+    The name used to be frozen at import while the path and URL were re-read at call
+    time, so setting it inside a running process changed nothing and said nothing.
+    Checking the helper alone is not enough: this proves indexing and search both
+    follow it, so what gets written is what gets read.
+    """
+    monkeypatch.setenv("QDRANT_COLLECTION", "tenders_eval")
+    assert current_collection() == "tenders_eval"
+    assert current_collection("explicit") == "explicit"  # an explicit name still wins
+
+    ensure_collection(store)
+    index_chunks(store, make_chunks("пеня за просрочку"))
+    assert store.collection_exists("tenders_eval")
+    assert not store.collection_exists("tenders")
+    assert search(store, "пеня за просрочку"), "searched somewhere other than it wrote"
+
+    monkeypatch.delenv("QDRANT_COLLECTION")
+    assert current_collection() == "tenders"

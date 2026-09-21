@@ -34,8 +34,8 @@ from pydantic import BaseModel, Field
 from qdrant_client import QdrantClient
 
 from app.store import (
-    DEFAULT_COLLECTION,
     SearchHit,
+    current_collection,
     describe_mode,
     ensure_collection,
     open_store,
@@ -156,12 +156,16 @@ def health(client: QdrantClient = Depends(get_store)) -> HealthResponse:
     The point count is here because the most likely failure in this system is not a
     crash — it is querying an empty collection after switching between embedded and
     container mode, which otherwise returns "no results" and looks like bad retrieval.
+
+    The collection name is resolved once, so the name reported and the collection
+    counted are guaranteed to be the same one — the same name `/ask` resolves to.
     """
+    collection = current_collection()
     return HealthResponse(
         status="ok",
         mode=describe_mode(),
-        collection=DEFAULT_COLLECTION,
-        points=client.count(collection_name=DEFAULT_COLLECTION, exact=True).count,
+        collection=collection,
+        points=client.count(collection_name=collection, exact=True).count,
     )
 
 
