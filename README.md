@@ -3,6 +3,8 @@
 Finds the clauses in a messy Russian tender document that answer a question, instead of feeding a model three hundred pages.
 Every passage comes back with the file and page it came from, and retrieval accuracy is measured rather than claimed.
 
+[![CI](https://github.com/wanchiko-studio/rag-service/actions/workflows/ci.yml/badge.svg)](https://github.com/wanchiko-studio/rag-service/actions/workflows/ci.yml)
+
 **Retrieval only, on purpose.** Nothing here writes an answer yet — `POST /ask` returns the
 ranked passages and their scores. Generation needs a model, a model needs a key or a local
 runtime, and neither exists in this repo today. An endpoint that cannot fabricate an answer

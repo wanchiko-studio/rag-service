@@ -163,5 +163,8 @@ generated for the purpose that had never been indexed before — plus `/health`,
 agree rather than merely both appearing to work.
 
 **Not verified:** `docker-compose.yml` has never been started — no Docker on this machine.
-CI is committed but has never run, because there is no remote. Both are stated as such in
-the README rather than implied to work.
+The README says so rather than implying it works.
+
+**CI, since:** when this was written there was no remote, so CI had never run. Its first
+run came when the repo went public on Day 5: green on 3.11 and 3.12, 35 tests each with no
+key and no network, and the compose file parsed on both.
