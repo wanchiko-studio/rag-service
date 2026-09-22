@@ -34,7 +34,11 @@ topics set.
   x86_64 macOS wheel, since 1.24 dropped Intel macOS entirely.
 - `requirements.txt` is deliberately **not** pinned against this. Platform resolution
   handles it, and a bare `onnxruntime<1.24` would hold Linux CI back for a
-  Mac-only reason. A lockfile from `pip freeze` is the Day 5 answer.
+  Mac-only reason. A lockfile is still owed, but **not from `pip freeze` on this Mac**: that
+  pins `onnxruntime==1.23.2` for Linux too — the same mistake — while CI's first run
+  resolved 1.30.0. It needs per-platform markers (e.g. `uv pip compile --universal`). It
+  matters: starlette already warns that TestClient's `httpx` support is deprecated, and
+  unpinned, the release that drops it turns CI red with no change to this code.
 - Invoke as `.venv/bin/python …` rather than relying on an activated shell.
 
 ## Conventions
