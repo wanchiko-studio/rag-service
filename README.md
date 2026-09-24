@@ -72,7 +72,7 @@ Built in the open, one step per day. Honest state as of the last commit:
 - [x] CI on GitHub runners, Python 3.11 and 3.12
 - [x] Qdrant in a container — `docker-compose.yml` written, **never run** (see below)
 - [ ] Generation: a model that writes an answer from the retrieved passages
-- [ ] `rag-eval`: 20 questions, known answers, a printed retrieval score
+- [x] [`rag-eval`](https://github.com/wanchiko-studio/rag-eval): 8 hand-labelled questions, the rank of the correct passage and MRR, results published — see below
 
 ## The first baseline is weak, and one reason is now measured
 
@@ -82,13 +82,19 @@ Asked a Russian question against a private five-page bilingual document split in
 chunks, the passage that answers it came back **second**. The three scores were
 **0.4549 / 0.4443 / 0.4434** — a spread of about one hundredth across the whole top
 three. A retriever that cannot separate a right answer from a wrong one by more than
-that is not ranking, it is guessing politely. (The document cannot be published;
-`rag-eval` replaces it with a public tender corpus.)
+that is not ranking, it is guessing politely. (The document cannot be published. `rag-eval`
+measures this service on a public one instead — **a 13-page English petroleum engineering
+paper**, not a tender. That was a deliberate compromise: a real document of real length,
+available to anyone who wants to reproduce the numbers, at the cost of not exercising the
+Russian tuning.)
 
 **The measured reason: the model reads only the first 128 tokens of each chunk.** Not
 the 512 its config file advertises — that is the size of its position table. The
-tokenizer cuts at 128 without a warning. On this text that is about 440 characters, so
-every 1200-character chunk has more than half its text discarded before it is embedded.
+tokenizer cuts at 128 without a warning. How much text that is depends on the document, so
+the figure now names its corpus: about **440 characters** on the private Russian file above,
+and about **390 characters** on the English paper `rag-eval` measures, which tokenises at
+3.04 characters per token. At `max_chars=1200` that means **64% of every chunk is discarded
+before it is embedded** on that corpus — measured, not estimated.
 
 Two measurements make that visible rather than inferred:
 
@@ -103,8 +109,9 @@ Two measurements make that visible rather than inferred:
 to print a green tick, because it compared chunks against 512.
 
 Worth stating plainly: with ten chunks indexed, "in the top three" means "in the top
-thirty percent". That is a low bar, and `rag-eval` needs a harder one — the rank of the
-correct chunk, not merely whether it showed up.
+thirty percent". That is a low bar, so `rag-eval` uses a harder one — the rank of the
+correct chunk, not merely whether it showed up. It has since run, against 55 chunks of a
+real paper rather than ten of a short one.
 
 Measured on Python 3.12.14, `fastembed==0.8.0` running the quantized ONNX build
 `qdrant/paraphrase-multilingual-MiniLM-L12-v2-onnx-Q`, `onnxruntime==1.23.2`,
@@ -112,8 +119,10 @@ Measured on Python 3.12.14, `fastembed==0.8.0` running the quantized ONNX build
 
 What to change first, in order:
 
-1. **Chunk size against the 128-token window** — about 440 characters fits. It is the
-   cause already measured.
+1. **Chunk size against the 128-token window — tested, and it did not help.** `rag-eval`
+   ran the same questions at 1200, 480 and 400 characters. The share of the document the
+   model can search went from 46% to 97%, and MRR did not move. Details below; the default
+   is unchanged because of it.
 2. **The model.** MiniLM is tuned for sentence similarity, not retrieval, and was chosen
    for CPU speed on an Intel machine. `intfloat/multilingual-e5-large` is built for
    retrieval and reads 512 tokens.
@@ -124,7 +133,40 @@ What to change first, in order:
 embedding, and announces it at load time. A further lever, not an explanation.
 
 None of these get changed by hand. `rag-eval` changes one variable at a time and shows
-whether the number moved, which is the entire point of the project.
+whether the number moved — and for chunk size the answer was that it did not, which is why
+`max_chars` here is still 1200.
+
+## What rag-eval measured
+
+[`rag-eval`](https://github.com/wanchiko-studio/rag-eval) ran 8 hand-labelled questions
+against this service at three chunk sizes, on a 13-page English petroleum engineering paper.
+Its README carries the per-question ranks; the JSON behind every number is committed there.
+
+| `max_chars` | chunks indexed | MRR | mean rank over hits | document searchable |
+|---|---|---|---|---|
+| **1200** (the default) | 55 | **0.3624** | 8.14 | 46% |
+| 480 | 134 | **0.3408** | 3.20 | 96% |
+| 400 | 149 | **0.3615** | 4.80 | 97% |
+
+**The headline is a null result.** Searchable text more than doubled, 46% → 97%, and the
+score did not move: the spread across the three columns is 0.022, against a noise floor of
+0.062 for eight questions. Smaller chunks fit the embedding window, which helps, and take the
+candidate count from 55 to 149, which hurts. The two cancelled, and eight questions cannot
+separate them. **The default is therefore unchanged, on purpose** — there is no measurement
+here that justifies moving it.
+
+**And MRR ≈ 0.36 is mediocre.** It means the correct passage typically lands around **rank 3**.
+Useful for a human scanning a short list; not good enough to hand the top hit to a model and
+trust it. That is the honest state of this service, measured rather than asserted.
+
+**One result qualifies all the others.** In `rag-eval`'s q1, the chunk holding the answer came
+back at **rank 5 even though the sentence that answers the question was never embedded** — it
+sits past the 128-token window. `/ask` returns a chunk's full text while only its first 128
+tokens are searchable, so a passage the model never read still reaches the reader when its
+chunk's embedded opening matches the query. This is the same phenomenon as the baseline above,
+where the answering passage starts at token 161 and the chunk still ranked second. So "never
+embedded" means **not independently searchable**, not unreachable — and it makes retrieval
+depend on the company a passage keeps rather than on the passage itself.
 
 ## The source text is damaged, and that had to be fixed first
 

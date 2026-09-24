@@ -150,11 +150,15 @@ def chunk_document(
     This default used to say 2000, so `scripts/show_chunks.py` — the tool for checking
     how documents get cut — previewed chunks the index never contained. One number now.
 
-    1200 does NOT fit the embedding model. It reads 128 tokens, about 440 characters
-    here, so each 1200-character chunk has more than half its text discarded (see
-    `app.embed.MAX_TOKENS`). That is deliberately not fixed by changing this default:
-    chunk size is the first variable `rag-eval` measures, and moving it before that
-    measurement exists would erase the baseline the measurement is compared against.
+    1200 does NOT fit the embedding model. It reads 128 tokens — about 440 characters of
+    Russian, about 390 of English — so most of each 1200-character chunk is discarded
+    before embedding (see `app.embed.MAX_TOKENS`).
+
+    That is deliberately still not fixed, and now for a measured reason rather than a
+    procedural one. `rag-eval` ran the same questions at 1200, 480 and 400: the share of
+    the document the model can search went from 46% to 97%, and MRR moved by less than the
+    noise floor. Smaller chunks fit the window and multiply the candidates, and the two
+    cancel out. Changing this default has not been earned.
     """
     body, page_ranges = _join_pages(doc)
 

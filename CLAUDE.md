@@ -64,7 +64,10 @@ embeddings → Qdrant vector search; CLI scripts for indexing and querying; `POS
 enforced by a socket guard; CI on 3.11 + 3.12. `docker-compose.yml` is written and has
 never been run.
 
-Not built yet: generation (Week 3), `rag-eval` (Days 6–7).
+Measured: `rag-eval` has run — 8 hand-labelled questions at `max_chars` 1200 / 480 / 400,
+MRR 0.3624 / 0.3408 / 0.3615, no movement beyond the noise floor. See the README.
+
+Not built yet: generation (Week 3).
 
 ## Defects found so far — all the same failure class
 
@@ -90,17 +93,26 @@ Verify numbers against the running system, not against a config file: the 512 ca
 
 Measured, reproducible bit-for-bit across Linux x86_64 and Intel macOS: **0.4549 /
 0.4443 / 0.4434**, correct passage at **rank 2**, `max_chars=1200`. The document it was
-measured on is private and cannot be published — rag-eval's corpus replaces it.
+measured on is private and cannot be published — `rag-eval` measures this service on a
+public 13-page English petroleum engineering paper instead.
 
-🔴 **Do not change the model, `max_chars`, or `top_k` to improve this.** The whole point of
-`rag-eval` is to move one variable at a time and show the number responding. Tuning before
-the measurement exists destroys the only interesting thing here.
+🔴 **Do not change the model, `max_chars`, or `top_k` to improve this.** The measurement now
+exists, and it says chunk size is not the lever: at 1200 / 480 / 400 the MRR was 0.3624 /
+0.3408 / 0.3615 while searchable text went from 46% to 97% of the document. Nothing here has
+earned a change to the default.
 
 **What is measured:** the model reads only the first 128 tokens of each chunk, about 440
 characters. The passage that answers the baseline question starts at token 161 of its
 chunk, so it was never embedded — the chunk ranked second on an opening paragraph that
 does not answer the question. It scores 0.4443 at both 1200 and 2000 characters because
 its first 128 tokens are identical either way.
+
+🔑 **Note what that also proves: unembedded text is still delivered.** The chunk was
+returned although the answering sentence was never searchable, because `/ask` hands back a
+chunk's full text. `rag-eval` hit the same thing independently — its q1 came back at rank 5
+with its anchor past the window — and corrected its own wording accordingly. "Never
+embedded" means **not independently searchable**, not unreachable. The weakness is that
+retrieval then depends on the company a passage keeps rather than on the passage itself.
 
 The earlier diagnosis — an "intent-granularity problem, not a language problem" — is
 **withdrawn**: it analysed text the model never read. WHAT-I-DID.md keeps the record.
@@ -115,57 +127,43 @@ The earlier diagnosis — an "intent-granularity problem, not a language problem
   a range, «стр. 1–2».
 - **`max_chars=1200`** — what `index_pdf.py` has always used, now also the library and
   preview default, so `show_chunks.py` finally previews what gets indexed. It does **not**
-  fit the model: 128 tokens is ~440 characters at 3.46 chars/token, so every 1200-char
-  chunk is truncated. Left alone until rag-eval measures it. (`CHUNK_MAX_CHARS` in
+  fit the model: 128 tokens is ~440 characters at 3.46 chars/token on Russian, ~390 at 3.04
+  on the English paper, so every 1200-char chunk is truncated. **Measured by `rag-eval` and
+  left alone anyway:** shrinking it to 480 or 400 made 97% of the document searchable and
+  moved MRR by less than the noise floor. (`CHUNK_MAX_CHARS` in
   `.env.example` was never read by anything and is gone; the flags are the real controls.)
 - **MiniLM-L12-v2 (384 dims, 0.22 GB)** for CPU speed on Intel — as fastembed runs it, the
   quantized ONNX build `qdrant/…-onnx-Q`, reading 128 tokens. Similarity-tuned rather than
   retrieval-tuned; `e5-large` reads 512 and is the obvious upgrade to test *with the eval*.
 
-## For `rag-eval`, Days 6–7
+## `rag-eval` — built, run, and what it says about this repo
 
-### Prerequisites — before any code
+Lives at [`../rag-eval`](https://github.com/wanchiko-studio/rag-eval). The design notes that
+used to sit here — TOML versus YAML, anchors versus chunk ids, the harness shape — moved into
+that repo's own `CLAUDE.md`, where they are now descriptions rather than plans.
 
-- 🔴 **There is no corpus.** The only document ever indexed is a private five-page file that
-  cannot be published, so it cannot be the eval corpus. Day 6's first step is getting two or
-  three genuine tender PDFs from `zakupki.gov.ru` into `samples/` (already git-ignored) —
-  not writing code. Twenty questions written against the wrong document measure nothing.
-- 🔴 **`--reset` discipline.** Day 7 re-indexes the same documents at other chunk sizes.
-  Without `--reset`, `index_pdf.py` **appends** — duplicates compete with each other and
-  corrupt exactly the measurement Day 7 exists to produce. Reset on every re-index, or give
-  each configuration its own collection (`QDRANT_COLLECTION`, now resolved at call time).
-- **The first variable is chunk size against the 128-token window** — ~440 characters fits.
-  It is the one cause already measured.
+**What it measured, on a 13-page English petroleum engineering paper:**
 
-### Scoring rules
+| `max_chars` | chunks | MRR | mean rank over hits | document searchable |
+|---|---|---|---|---|
+| 1200 | 55 | 0.3624 | 8.14 | 46% |
+| 480 | 134 | 0.3408 | 3.20 | 96% |
+| 400 | 149 | 0.3615 | 4.80 | 97% |
 
-- 🔴 **Do not score hit@3.** With ten chunks indexed that is "top 30%" — a metric that
-  would read 90% while the system stayed useless. Score the **rank** of the correct chunk,
-  or MRR.
-- **Write the expected answer per question explicitly, and allow more than one acceptable
-  chunk.** Two readers disagreed about which chunk answered the baseline question, and both
-  readings were defensible. An eval built on one person's labelling mood measures the
-  labeller, not the retriever.
-- 🔴 **The questions and their anchors are Abdulrahman's to write.** An eval whose questions
-  and answers were both written by an AI measures nothing and cannot be defended.
-- Needs a genuinely long document. The largest tested so far is five pages; the README
-  claims this handles 300-page tender packages and that claim is **currently untested**.
+**A null result, and it is the honest kind.** Searchable text more than doubled and MRR did
+not move — the spread is 0.022 against a 0.062 noise floor for eight questions. Smaller chunks
+fit the window (helps) and triple the candidate count (hurts); the effects cancelled, and this
+sample cannot separate them.
 
-### Harness design, already decided
+🔴 **Consequences for anyone working here:**
 
-- **Question file in TOML**, read with stdlib `tomllib` — available from 3.11, which is
-  exactly the CI floor, so the eval file needs no dependency.
-- **Labels are verbatim text anchors, never chunk ids.** Chunk ids change the moment
-  `max_chars` changes, which is Day 7's whole experiment; an id label would silently point
-  at the wrong passage. Any hit containing any anchor counts. Match with whitespace and case
-  collapsed, because PDF extraction breaks lines mid-sentence. Copy anchors from
-  `scripts/show_chunks.py` output, not a PDF viewer, which shows the unrepaired «ĸ».
-- **Black-box over HTTP:** `GET /health` first and refuse an empty index; then `POST /ask`
-  with `top_k=20`, **asserting `mode == "retrieval-only"`** on every response.
-- **Label errors are reported, not scored.** When the index holds ≤ 20 points, `top_k=20`
-  returns all of it, so an anchor that matches nothing is a mislabel, not a retrieval
-  failure. List them separately and exit non-zero — an MRR over mislabelled questions
-  measures the labeller.
-- Refuse to run while any field still reads `SET_YOUR_OWN`.
-- `pytest.ini` with `pythonpath = .` (bare `pytest` fails without it); tests on httpx
-  `MockTransport` plus the socket guard; CI on 3.11 + 3.12 only.
+- **Do not change `max_chars` on the strength of the window finding.** It was tested. It did
+  not help. The default stays at 1200 until a measurement says otherwise.
+- **MRR ≈ 0.36 means the right passage lands around rank 3.** Mediocre, and stated as such in
+  the README. The next levers to test are the model (`e5-large`, 512 tokens) and reranking —
+  not chunk size.
+- **The corpus is still not a tender.** Nothing here has been measured on Russian tender
+  documents, which is what this service is actually for. A Russian corpus is the single change
+  that would make these numbers mean what the README's problem statement claims.
+- **Eight questions is a small instrument.** More questions, not more tuning, is what sharpens
+  it.

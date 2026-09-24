@@ -8,8 +8,10 @@
 🔑 RETRIEVAL ONLY, ON PURPOSE. This endpoint does not write an answer, because there
 is no model behind it yet and inventing one would mean inventing an API key. What it
 returns is the ranked passages, their scores and their citations — which is the part
-that can actually be checked, and the part `rag-eval` will put a number on. Generation
-lands in Week 3, against a local model, where it can be run without a secret.
+that can actually be checked, and the part `rag-eval` has now put a number on: MRR 0.36
+over eight hand-labelled questions, which puts the right passage around rank 3. Mediocre,
+and in the README rather than hidden. Generation lands in Week 3, against a local model,
+where it can be run without a secret.
 
 Saying «мы ничего не выдумываем» is easy. Shipping an endpoint whose contract makes it
 impossible to fabricate an answer is the version an employer can verify in ten seconds.

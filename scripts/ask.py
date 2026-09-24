@@ -4,7 +4,8 @@
 
 Retrieval only — no model is asked to write an answer yet. That is deliberate: if the
 right passage is not in this list, no amount of prompting downstream will save the
-answer. This is the part `rag-eval` will put a number on.
+answer. This is the part `rag-eval` has put a number on — see the results table in the
+README, and read the passages below rather than the score.
 """
 
 from __future__ import annotations
