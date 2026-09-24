@@ -58,6 +58,50 @@ useless.
 That measurement is the point of this project. Building a retrieval pipeline is a weekend;
 knowing how often it is right is the part that is usually skipped.
 
+## A worked example, with real output
+
+A real question against the 13-page paper `rag-eval` uses, at the default `max_chars=1200`.
+This is the actual output of `scripts/ask.py`, with only fastembed's first-use warning
+removed and the tool's own `… ещё N символов` truncation left in place:
+
+```bash
+python scripts/index_pdf.py path/to/petroleum-science-2022-self-generated-proppant.pdf --reset
+python scripts/ask.py "Why is the density of the obtained epoxy resin constant, and lower than conventional epoxy resins and traditional solid proppants?"
+```
+
+```
+Вопрос: Why is the density of the obtained epoxy resin constant, and lower than conventional epoxy resins and traditional solid proppants?
+
+========================================================================
+#1   score 0.7560   petroleum-science-2022-self-generated-proppant.pdf, стр. 8–9
+------------------------------------------------------------------------
+686 mPa s. The density of the obtained epoxy resin re-
+mains constant at 1.2 g/cm3, lower than the conventional epoxy
+resins(1.6e2.3g/cm3)andthetraditionalsolidproppants(quartz
+Fig.14. Visualproppantsedimentationandtransportationdevice.
+sand:2.2e2.3g/cm3,ceramsite:1.7e1.9g/cm3).Thisisbecausethe
+… ещё 740 символов
+========================================================================
+#2   score 0.6420   petroleum-science-2022-self-generated-proppant.pdf, стр. 9
+#3   score 0.5976   petroleum-science-2022-self-generated-proppant.pdf, стр. 12
+========================================================================
+```
+
+The answering sentence is in the first hit, cited to **pages 8–9**. That is also the passage
+`rag-eval` labelled as correct for this question, and its
+[published run](https://github.com/wanchiko-studio/rag-eval/blob/main/results/published/chunk-1200.json)
+records the same rank and the same score — 0.7560 — so the example above can be checked
+rather than taken on trust.
+
+Two things it shows that a polished example would hide:
+
+- **The extracted text is messy.** `resins(1.6e2.3g/cm3)` lost its spaces, `re-`/`mains` is
+  split across a line break, and a figure caption sits in the middle of the passage, because
+  this is a two-column PDF and the columns interleave line by line. Retrieval works anyway;
+  the page citation is what makes the result checkable by a human.
+- **The paper is not in this repository.** It is someone else's published work. `rag-eval`
+  names it and points its own corpus setting at a local copy.
+
 ## Status
 
 Built in the open, one step per day. Honest state as of the last commit:

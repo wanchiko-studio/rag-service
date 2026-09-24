@@ -6,6 +6,50 @@ surprising part once you have those.
 
 ---
 
+## Day 7 — what the eval said, and a shipping rule that changed
+
+[`rag-eval`](https://github.com/wanchiko-studio/rag-eval) ran 8 hand-labelled questions
+against this service at three chunk sizes. The result is a null one, and it is reported
+first in the README because it is the most credible thing either repo produced: **searchable
+text went from 46% to 97% of the document and MRR did not move** — 0.3624 / 0.3408 / 0.3615
+at `max_chars` 1200 / 480 / 400, a spread of 0.022 against a 0.062 noise floor for eight
+questions.
+
+Two effects cancelled. Smaller chunks fit the 128-token window, which helps; they also took
+the candidate count from 55 to 149, which hurts. Eight questions cannot separate them, so
+**`max_chars` stays at 1200** — the change this repo's own README had nominated as "what to
+change first" was tested and did not earn its place.
+
+It is worth being plain about the level: **MRR ≈ 0.36 means the correct passage typically
+lands around rank 3.** That is fine for a person scanning a short list and not good enough to
+hand the top hit to a model. The README says so in those words.
+
+**A claim of mine was disproved in the process.** Both repos said that text past the
+embedding window could not be retrieved "at any rank". `rag-eval`'s q1 came back at **rank
+5** with its anchor never embedded: `/ask` returns a chunk's whole text while only its first
+128 tokens are searchable, so a passage the model never read still reaches the reader when
+its chunk's opening matches the query. This repo had already recorded the same phenomenon at
+the baseline — the answering passage starting at token 161, the chunk ranking second anyway —
+without noticing what it proved. Both wordings now say **not independently searchable**,
+which is the accurate and weaker claim.
+
+### The ship test changed: point four is no longer a demo video
+
+**Was:** runs from a clean clone · README in English with the problem in the first two lines ·
+CI green with no key and no network · **45-second demo video** · public with topics set.
+
+**Now:** the same five, with **a worked example with real output in the README** in place of
+the video, for libraries and APIs. Anything with a user interface keeps the video.
+
+The reason is that a video of a CLI is a slower way to read a terminal. This README now shows
+a real question, the passage that came back and the page it cited — and the same run is
+recorded in `rag-eval`'s committed results file with the identical rank and score, so a
+reader can check it instead of watching me assert it. Forty-five seconds of screen capture
+could not have been checked at all. Abdulrahman's decision; recorded here because a ship test
+that quietly moves is not a test.
+
+---
+
 ## Day 5 — reviewing six files an agent sandbox changed
 
 Six files were changed by an agent sandbox on 20 Sept and never read before this review.

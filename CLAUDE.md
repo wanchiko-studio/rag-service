@@ -11,8 +11,14 @@ embeddings and reranking.
 
 **A project counts as shipped only when all five hold:** runs from a clean clone
 following only the README · README in English, problem in the first two lines · CI green
-on GitHub runners with no API key and no network · 45-second demo video · public with
-topics set.
+on GitHub runners with no API key and no network · **a worked example with real output in
+the README** · public with topics set.
+
+⚠️ **Point four changed on 24 Sept.** It used to be "45-second demo video". For a library or
+an API there is nothing to film that a reader cannot read faster: a real question, the
+passage that came back and the page it cited says more in ten seconds than a video does in
+forty-five, and it can be checked against a committed results file. The video rule still
+suits anything with a user interface. `WHAT-I-DID.md` records the change.
 
 ## Environment — this cost an evening, do not rediscover it
 
